@@ -67,7 +67,49 @@ export function DepositDetailDrawer({
                 <dd>{formatDate(deposit.reviewedAt)}</dd>
               </div>
             ) : null}
+            {deposit.verificationOutcome ? (
+              <div className="col-span-2">
+                <dt className="text-fg-muted">Verification</dt>
+                <dd className="font-mono text-xs">{deposit.verificationOutcome}</dd>
+              </div>
+            ) : null}
+            {deposit.verifiedAmount !== undefined ? (
+              <div>
+                <dt className="text-fg-muted">Verified amount</dt>
+                <dd className="font-mono">{formatCurrency(deposit.verifiedAmount)}</dd>
+              </div>
+            ) : null}
+            {deposit.verifiedProviderSource ? (
+              <div>
+                <dt className="text-fg-muted">Receipt source</dt>
+                <dd className="font-mono text-xs">{deposit.verifiedProviderSource}</dd>
+              </div>
+            ) : null}
+            {deposit.bankReference ? (
+              <div className="col-span-2">
+                <dt className="text-fg-muted">Bank reference</dt>
+                <dd className="break-all font-mono text-xs">{deposit.bankReference}</dd>
+              </div>
+            ) : null}
+            {deposit.externalReference ? (
+              <div className="col-span-2">
+                <dt className="text-fg-muted">User submitted</dt>
+                <dd className="break-all font-mono text-xs">{deposit.externalReference}</dd>
+              </div>
+            ) : null}
+            {deposit.accountMatch ? (
+              <div>
+                <dt className="text-fg-muted">Account match</dt>
+                <dd>{deposit.accountMatch}</dd>
+              </div>
+            ) : null}
           </dl>
+
+          {deposit.verificationReason ? (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+              {deposit.verificationReason}
+            </p>
+          ) : null}
 
           {deposit.rejectionReason ? (
             <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -75,16 +117,20 @@ export function DepositDetailDrawer({
             </p>
           ) : null}
 
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-              Payment screenshot
-            </p>
-            <img
-              src={deposit.screenshotUrl}
-              alt="Payment proof"
-              className="w-full rounded-lg border border-border object-contain"
-            />
-          </div>
+          {deposit.screenshotUrl ? (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                Payment screenshot
+              </p>
+              <img
+                src={deposit.screenshotUrl}
+                alt="Payment proof"
+                className="w-full rounded-lg border border-border object-contain"
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-fg-muted">No screenshot attached.</p>
+          )}
         </div>
 
         {deposit.status === 'PENDING' ? (

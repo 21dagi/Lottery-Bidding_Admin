@@ -57,7 +57,14 @@ export type Deposit = {
   amount: number
   method: PaymentMethodId
   status: DepositStatus
-  screenshotUrl: string
+  verificationOutcome?: string
+  screenshotUrl?: string
+  externalReference?: string
+  bankReference?: string
+  verifiedAmount?: number
+  verifiedProviderSource?: string
+  verificationReason?: string
+  accountMatch?: string
   createdAt: string
   reviewedAt?: string
   rejectionReason?: string
