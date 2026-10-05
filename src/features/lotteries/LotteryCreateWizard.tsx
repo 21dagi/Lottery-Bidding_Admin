@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { lotteriesApi } from '@/api/endpoints'
+import { lotteriesApi, mediaApi } from '@/api/endpoints'
 import { Button } from '@/components/ui/Button'
 import { Input, Label, Select, Textarea } from '@/components/ui/Input'
 import { PageHeader, Panel } from '@/components/ui/Page'
@@ -19,7 +19,7 @@ const prizeSchema = z
     subtitle: z.string().min(1, 'Subtitle required'),
     detail: z.string().min(1, 'Detail required'),
     amountEtb: z.coerce.number().optional(),
-    imageUrl: z.string().optional(),
+    imageFileName: z.string().optional(),
     fulfillmentNote: z.string().optional(),
     specModel: z.string().optional(),
     specStorage: z.string().optional(),
@@ -33,10 +33,10 @@ const prizeSchema = z
         message: 'ETB amount required for money prizes',
       })
     }
-    if (val.kind === 'product' && !val.imageUrl?.trim()) {
+    if (val.kind === 'product' && !val.imageFileName?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['imageUrl'],
+        path: ['imageFileName'],
         message: 'Product image required',
       })
     }
@@ -49,7 +49,7 @@ const schema = z.object({
   ticketPriceEtb: z.coerce.number().min(1),
   totalTickets: z.coerce.number().min(1),
   closesAt: z.string().min(1),
-  coverUrl: z.string().optional(),
+  coverFileName: z.string().optional(),
   publish: z.boolean(),
   prizes: z.array(prizeSchema).min(1).max(3),
 })
@@ -60,12 +60,12 @@ const steps = ['Lottery info', 'Tickets', 'Prizes (1–3)', 'Review'] as const
 
 const defaultPrize = (place: 1 | 2 | 3): FormValues['prizes'][number] => ({
   place,
-  kind: place === 2 ? 'product' : 'money',
-  title: place === 1 ? '100,000 ETB' : place === 2 ? 'Product prize' : '10,000 ETB',
-  subtitle: place === 2 ? 'Device details' : 'Cash prize',
+  kind: 'money',
+  title: place === 1 ? '100,000 ETB' : place === 2 ? '50,000 ETB' : '10,000 ETB',
+  subtitle: 'Cash prize',
   detail: '',
-  amountEtb: place === 1 ? 100000 : place === 3 ? 10000 : undefined,
-  imageUrl: '',
+  amountEtb: place === 1 ? 100000 : place === 2 ? 50000 : 10000,
+  imageFileName: '',
   fulfillmentNote: '',
   specModel: '',
   specStorage: '',
@@ -74,7 +74,9 @@ const defaultPrize = (place: 1 | 2 | 3): FormValues['prizes'][number] => ({
 
 export function LotteryCreateWizard() {
   const [step, setStep] = useState(0)
-  const [coverName, setCoverName] = useState<string>()
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const coverFileRef = useRef<File | null>(null)
+  const prizeFilesRef = useRef<Record<number, File | null>>({})
   const navigate = useNavigate()
 
   const form = useForm<FormValues>({
@@ -87,6 +89,7 @@ export function LotteryCreateWizard() {
       totalTickets: 1000,
       closesAt: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 16),
       publish: true,
+      coverFileName: '',
       prizes: [defaultPrize(1), defaultPrize(2), defaultPrize(3)],
     },
     mode: 'onChange',
@@ -98,41 +101,67 @@ export function LotteryCreateWizard() {
   })
 
   const mutation = useMutation({
-    mutationFn: (values: FormValues) => {
-      const prizes = values.prizes.map((p) => ({
-        place: p.place as 1 | 2 | 3,
-        kind: p.kind,
-        title:
-          p.kind === 'money' && p.amountEtb
-            ? formatCurrency(p.amountEtb)
-            : p.title,
-        subtitle: p.subtitle,
-        detail: p.detail,
-        amountEtb: p.kind === 'money' ? p.amountEtb : undefined,
-        imageUrl: p.kind === 'product' ? p.imageUrl : undefined,
-        fulfillmentNote: p.fulfillmentNote,
-        specs:
-          p.kind === 'product'
-            ? [
-                p.specModel ? { label: 'Model', value: p.specModel } : null,
-                p.specStorage ? { label: 'Storage', value: p.specStorage } : null,
-                p.specOther ? { label: 'Notes', value: p.specOther } : null,
-              ].filter(Boolean)
-            : undefined,
-      }))
+    mutationFn: async (values: FormValues) => {
+      let coverMediaId: string | undefined
+      if (coverFileRef.current) {
+        const uploaded = await mediaApi.upload(coverFileRef.current)
+        coverMediaId = uploaded.id
+      }
+
+      const prizes = []
+      for (let i = 0; i < values.prizes.length; i++) {
+        const p = values.prizes[i]
+        let imageMediaId: string | undefined
+        if (p.kind === 'product') {
+          const file = prizeFilesRef.current[i]
+          if (!file) {
+            throw new Error(`Product image required for place ${p.place}`)
+          }
+          const uploaded = await mediaApi.upload(file)
+          imageMediaId = uploaded.id
+        }
+
+        prizes.push({
+          place: Number(p.place) as 1 | 2 | 3,
+          kind: p.kind,
+          title:
+            p.kind === 'money' && p.amountEtb
+              ? formatCurrency(p.amountEtb)
+              : p.title,
+          subtitle: p.subtitle,
+          detail: p.detail,
+          amountEtb: p.kind === 'money' ? Number(p.amountEtb) : undefined,
+          imageMediaId,
+          fulfillmentNote: p.fulfillmentNote || undefined,
+          specs:
+            p.kind === 'product'
+              ? [
+                  p.specModel ? { label: 'Model', value: p.specModel } : null,
+                  p.specStorage
+                    ? { label: 'Storage', value: p.specStorage }
+                    : null,
+                  p.specOther ? { label: 'Notes', value: p.specOther } : null,
+                ].filter(Boolean)
+              : undefined,
+        })
+      }
+
       return lotteriesApi.create({
         title: values.title,
         seriesLabel: values.seriesLabel,
         description: values.description,
-        ticketPriceEtb: values.ticketPriceEtb,
-        totalTickets: values.totalTickets,
+        ticketPriceEtb: Number(values.ticketPriceEtb),
+        totalTickets: Number(values.totalTickets),
         closesAt: new Date(values.closesAt).toISOString(),
-        coverUrl: values.coverUrl,
+        coverMediaId,
         publish: values.publish,
         prizes,
       })
     },
     onSuccess: (res) => navigate(`/lotteries/${res.data.id}`),
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : 'Create failed')
+    },
   })
 
   const next = async () => {
@@ -160,9 +189,9 @@ export function LotteryCreateWizard() {
             className={cn(
               'rounded-full px-3 py-1 text-xs font-semibold',
               i === step
-                ? 'bg-accent text-accent-fg'
+                ? 'bg-accent text-ink'
                 : i < step
-                  ? 'bg-accent/15 text-accent'
+                  ? 'bg-accent/20 text-accent'
                   : 'bg-surface-2 text-fg-muted',
             )}
           >
@@ -172,8 +201,11 @@ export function LotteryCreateWizard() {
       </ol>
 
       <form
-        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
-        className="mx-auto max-w-3xl space-y-4"
+        className="space-y-4"
+        onSubmit={form.handleSubmit((values) => {
+          setSubmitError(null)
+          mutation.mutate(values)
+        })}
       >
         {step === 0 ? (
           <Panel title="Lottery info">
@@ -196,15 +228,12 @@ export function LotteryCreateWizard() {
               </div>
               <FileUpload
                 label="Cover image (shown on user app cards)"
-                valueName={coverName}
+                valueName={form.watch('coverFileName') || undefined}
                 onFile={(file) => {
-                  setCoverName(file?.name)
-                  form.setValue(
-                    'coverUrl',
-                    file
-                      ? `https://placehold.co/800x400/0f766e/ecfdf5?text=${encodeURIComponent(file.name)}`
-                      : undefined,
-                  )
+                  coverFileRef.current = file
+                  form.setValue('coverFileName', file?.name ?? '', {
+                    shouldValidate: true,
+                  })
                 }}
               />
             </div>
@@ -249,7 +278,10 @@ export function LotteryCreateWizard() {
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => remove(index)}
+                          onClick={() => {
+                            delete prizeFilesRef.current[index]
+                            remove(index)
+                          }}
                         >
                           Remove
                         </Button>
@@ -259,15 +291,15 @@ export function LotteryCreateWizard() {
                       <div>
                         <Label>Place</Label>
                         <Select {...form.register(`prizes.${index}.place`)}>
-                          <option value={1}>1st</option>
-                          <option value={2}>2nd</option>
-                          <option value={3}>3rd</option>
+                          <option value={1}>1</option>
+                          <option value={2}>2</option>
+                          <option value={3}>3</option>
                         </Select>
                       </div>
                       <div>
-                        <Label>Category</Label>
+                        <Label>Kind</Label>
                         <Select {...form.register(`prizes.${index}.kind`)}>
-                          <option value="money">Money (ETB)</option>
+                          <option value="money">Money</option>
                           <option value="product">Product</option>
                         </Select>
                       </div>
@@ -275,28 +307,24 @@ export function LotteryCreateWizard() {
                         <Label>Title</Label>
                         <Input {...form.register(`prizes.${index}.title`)} />
                       </div>
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div>
                         <Label>Subtitle</Label>
                         <Input {...form.register(`prizes.${index}.subtitle`)} />
                       </div>
-                      <div>
+                      <div className="sm:col-span-2">
                         <Label>Fulfillment note</Label>
                         <Input
                           {...form.register(`prizes.${index}.fulfillmentNote`)}
-                          placeholder="Escrow / delivery / wallet credit"
                         />
                       </div>
                     </div>
                     <div className="mt-3">
-                      <Label>Detail (user-facing description)</Label>
+                      <Label>Detail</Label>
                       <Textarea {...form.register(`prizes.${index}.detail`)} />
                     </div>
-
                     {kind === 'money' ? (
-                      <div className="mt-3 max-w-xs">
-                        <Label>Money value (ETB)</Label>
+                      <div className="mt-3">
+                        <Label>Amount (ETB)</Label>
                         <Input
                           type="number"
                           {...form.register(`prizes.${index}.amountEtb`)}
@@ -312,23 +340,23 @@ export function LotteryCreateWizard() {
                         <FileUpload
                           label="Product image"
                           valueName={
-                            form.watch(`prizes.${index}.imageUrl`)
-                              ? 'Image selected'
-                              : undefined
+                            form.watch(`prizes.${index}.imageFileName`) || undefined
                           }
                           onFile={(file) => {
+                            prizeFilesRef.current[index] = file
                             form.setValue(
-                              `prizes.${index}.imageUrl`,
-                              file
-                                ? `https://placehold.co/400x400/0f766e/ecfdf5?text=${encodeURIComponent(file.name)}`
-                                : '',
+                              `prizes.${index}.imageFileName`,
+                              file?.name ?? '',
                               { shouldValidate: true },
                             )
                           }}
                         />
-                        {form.formState.errors.prizes?.[index]?.imageUrl ? (
+                        {form.formState.errors.prizes?.[index]?.imageFileName ? (
                           <p className="text-xs text-danger">
-                            {form.formState.errors.prizes[index]?.imageUrl?.message}
+                            {
+                              form.formState.errors.prizes[index]?.imageFileName
+                                ?.message
+                            }
                           </p>
                         ) : null}
                         <div className="grid gap-3 sm:grid-cols-3">
@@ -373,6 +401,10 @@ export function LotteryCreateWizard() {
                 <dd>{form.watch('title')}</dd>
               </div>
               <div className="flex justify-between gap-2">
+                <dt className="text-fg-muted">Cover</dt>
+                <dd>{form.watch('coverFileName') || 'None'}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
                 <dt className="text-fg-muted">Tickets</dt>
                 <dd>
                   {form.watch('totalTickets')} × {form.watch('ticketPriceEtb')} ETB
@@ -399,11 +431,17 @@ export function LotteryCreateWizard() {
           </Panel>
         ) : null}
 
+        {submitError ? (
+          <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+            {submitError}
+          </p>
+        ) : null}
+
         <div className="flex justify-between">
           <Button
             type="button"
             variant="outline"
-            disabled={step === 0}
+            disabled={step === 0 || mutation.isPending}
             onClick={() => setStep((s) => s - 1)}
           >
             Back

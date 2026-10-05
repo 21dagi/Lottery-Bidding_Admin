@@ -1,4 +1,6 @@
 import { apiRequest } from '@/api/client'
+import { env } from '@/config/env'
+import { useAuthStore } from '@/stores/authStore'
 import type {
   AdminUser,
   DashboardMetrics,
@@ -65,6 +67,33 @@ export const depositsApi = {
       method: 'POST',
       body: { reason },
     }),
+}
+
+export const mediaApi = {
+  upload: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const token = useAuthStore.getState().accessToken
+    const base = env.VITE_API_BASE_URL.replace(/\/$/, '')
+    const res = await fetch(`${base}/media/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      let message = 'Upload failed'
+      try {
+        const payload = (await res.json()) as { message?: string }
+        message = payload.message ?? message
+      } catch {
+        // ignore
+      }
+      throw new Error(message)
+    }
+    const json = (await res.json()) as { data: { id: string; url: string } }
+    return json.data
+  },
 }
 
 export const lotteriesApi = {
