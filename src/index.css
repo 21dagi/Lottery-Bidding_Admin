@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-canvas: 241 245 249;
+  --color-surface: 255 255 255;
+  --color-surface-2: 248 250 252;
+  --color-border: 226 232 240;
+  --color-fg: 15 23 42;
+  --color-fg-muted: 71 85 105;
+  --color-fg-subtle: 148 163 184;
+  --color-accent: 15 118 110;
+  --color-accent-fg: 236 253 245;
+  --color-success: 21 128 61;
+  --color-danger: 185 28 28;
+  --color-warning: 202 138 4;
+  --color-sidebar: 15 23 42;
+  --color-sidebar-fg: 248 250 252;
+  --color-sidebar-muted: 148 163 184;
+  --color-sidebar-active: 15 118 110;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background: rgb(var(--color-canvas));
+  color: rgb(var(--color-fg));
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.7);
+  border-radius: 999px;
+}
